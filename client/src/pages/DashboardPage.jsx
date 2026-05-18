@@ -250,87 +250,6 @@ export default function DashboardPage() {
         </AnimatePresence>
       </div>
 
-      {/* ── GitHub Repo Connect ── */}
-      <div className="card p-3 mb-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <GitBranch className="w-4 h-4 text-slate-600 shrink-0" />
-            <span className="text-xs font-medium text-slate-700">
-              {githubContext
-                ? <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> Connected: <span className="text-indigo-600">{githubContext.repoName}</span></span>
-                : githubRepo ? `Repo: ${githubRepo}` : 'Connect GitHub repo for smarter AI suggestions'}
-            </span>
-          </div>
-          <button onClick={() => setShowGithubForm(v => !v)}
-            className="text-xs text-indigo-600 hover:underline shrink-0">
-            {showGithubForm ? 'Hide' : githubRepo ? 'Change' : 'Connect'}
-          </button>
-        </div>
-
-        <AnimatePresence>
-          {showGithubForm && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-              <div className="pt-3 space-y-2">
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="text-xs text-slate-500 block mb-1">Repo URL (public or private)</label>
-                    <input className="input-field text-xs" placeholder="https://github.com/you/your-project"
-                      value={githubRepo} onChange={e => setGithubRepo(e.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 block mb-1">
-                    Personal Access Token <span className="text-slate-400">(optional — needed for private repos)</span>
-                  </label>
-                  <input className="input-field text-xs font-mono" type="password" placeholder="ghp_..."
-                    value={githubToken} onChange={e => setGithubToken(e.target.value)} />
-                </div>
-                <div className="flex gap-2">
-                  <motion.button whileTap={{ scale: 0.97 }}
-                    onClick={() => {
-                      localStorage.setItem('aw_github_repo', githubRepo);
-                      localStorage.setItem('aw_github_token', githubToken);
-                      setShowGithubForm(false);
-                      setGithubContext(null);
-                      toast.success('GitHub repo saved — generate a plan to load context', { icon: '🐙' });
-                    }}
-                    className="btn-primary text-xs flex items-center gap-1.5">
-                    <Link className="w-3.5 h-3.5" /> Save & Connect
-                  </motion.button>
-                  {githubRepo && (
-                    <button onClick={() => {
-                      setGithubRepo(''); setGithubToken(''); setGithubContext(null);
-                      localStorage.removeItem('aw_github_repo'); localStorage.removeItem('aw_github_token');
-                      setShowGithubForm(false);
-                    }} className="btn-secondary text-xs">Disconnect</button>
-                  )}
-                </div>
-                <p className="text-xs text-slate-400">
-                  AI will read your open issues, recent commits, and open PRs to give project-aware suggestions.
-                  Your token is only stored locally (localStorage) and sent only to your own backend.
-                </p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* GitHub context summary pills */}
-        {githubContext && !showGithubForm && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-wrap gap-2 mt-2">
-            <span className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded-full">
-              🐛 {githubContext.openIssues.length} open issues
-            </span>
-            <span className="text-xs px-2 py-1 bg-purple-50 text-purple-600 rounded-full">
-              🔀 {githubContext.openPRs.length} open PRs
-            </span>
-            <span className="text-xs px-2 py-1 bg-slate-100 text-slate-600 rounded-full">
-              📦 {githubContext.recentCommits.length} recent commits
-            </span>
-          </motion.div>
-        )}
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* AI Work Plan — 3/5 */}
         <div className="lg:col-span-3 space-y-4">
@@ -397,6 +316,82 @@ export default function DashboardPage() {
               className="btn-primary text-xs flex items-center gap-1.5">
               <Plus className="w-3.5 h-3.5" /> Add Task
             </motion.button>
+          </div>
+
+          {/* ── GitHub Repo Connect (inside Tasks) ── */}
+          <div className="card p-3 border border-dashed border-slate-200">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <GitBranch className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span className="text-xs text-slate-600 truncate">
+                  {githubContext
+                    ? <span className="flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
+                        <span className="font-medium text-indigo-600 truncate">{githubContext.repoName}</span>
+                      </span>
+                    : githubRepo
+                      ? <span className="truncate">{githubRepo.replace('https://github.com/', '')}</span>
+                      : 'Connect repo — AI uses your issues & PRs'
+                  }
+                </span>
+              </div>
+              <button onClick={() => setShowGithubForm(v => !v)}
+                className="text-xs text-indigo-600 hover:underline shrink-0">
+                {showGithubForm ? 'Hide' : githubRepo ? 'Edit' : 'Connect'}
+              </button>
+            </div>
+
+            {/* Context pills */}
+            {githubContext && !showGithubForm && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                <span className="text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded-full">🐛 {githubContext.openIssues.length} issues</span>
+                <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">🔀 {githubContext.openPRs.length} PRs</span>
+                <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">📦 {githubContext.recentCommits.length} commits</span>
+              </div>
+            )}
+
+            <AnimatePresence>
+              {showGithubForm && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                  <div className="pt-3 space-y-2">
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Repo URL</label>
+                      <input className="input-field text-xs" placeholder="https://github.com/you/project"
+                        value={githubRepo} onChange={e => setGithubRepo(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">
+                        Token <span className="text-slate-400">(optional, for private repos)</span>
+                      </label>
+                      <input className="input-field text-xs font-mono" type="password" placeholder="ghp_..."
+                        value={githubToken} onChange={e => setGithubToken(e.target.value)} />
+                    </div>
+                    <div className="flex gap-2">
+                      <motion.button whileTap={{ scale: 0.97 }}
+                        onClick={() => {
+                          localStorage.setItem('aw_github_repo', githubRepo);
+                          localStorage.setItem('aw_github_token', githubToken);
+                          setShowGithubForm(false);
+                          setGithubContext(null);
+                          toast.success('Repo connected — refresh AI plan to use it', { icon: '🐙' });
+                        }}
+                        className="btn-primary text-xs flex items-center gap-1.5">
+                        <Link className="w-3 h-3" /> Save
+                      </motion.button>
+                      {githubRepo && (
+                        <button onClick={() => {
+                          setGithubRepo(''); setGithubToken(''); setGithubContext(null);
+                          localStorage.removeItem('aw_github_repo');
+                          localStorage.removeItem('aw_github_token');
+                          setShowGithubForm(false);
+                        }} className="btn-secondary text-xs">Disconnect</button>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <AnimatePresence>
