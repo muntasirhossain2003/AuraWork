@@ -112,7 +112,7 @@ function TaskCard({ task, onToggleDone, onEdit, onDelete, onSubtaskChange }) {
           <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${PRIORITY_BADGE[task.priority]}`}>
             {task.priority}
           </span>
-          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
             <button onClick={() => setExpanded(v => !v)} className="p-1 rounded hover:bg-slate-100 transition-colors">
               {expanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
             </button>
