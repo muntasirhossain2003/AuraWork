@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { RefreshCw, Plus, CheckCircle, Clock, ChevronDown, ChevronUp, Lightbulb, Navigation, Crosshair, Pencil, Trash2, X, GitBranch, Link, CheckCircle2, ExternalLink } from 'lucide-react';
+import { RefreshCw, Plus, CheckCircle, Clock, ChevronDown, ChevronUp, Lightbulb, Navigation, Crosshair, Pencil, Trash2, X, GitBranch, CheckCircle2, ExternalLink } from 'lucide-react';
 import api from '../utils/api';
 import useGeofence from '../hooks/useGeofence';
 
@@ -16,6 +16,7 @@ function TaskCard({ task, onToggleDone, onEdit, onDelete, onSubtaskChange }) {
   const [newSub, setNewSub] = useState('');
   const [addingRepo, setAddingRepo] = useState(false);
   const [repoInput, setRepoInput] = useState(task.repo_url || '');
+  const [tokenInput, setTokenInput] = useState(() => localStorage.getItem(`aw_token_${task.id}`) || '');
 
   const doneCount = subtasks.filter(s => s.status === 'done').length;
   const progress = subtasks.length ? Math.round((doneCount / subtasks.length) * 100) : 0;
@@ -55,6 +56,8 @@ function TaskCard({ task, onToggleDone, onEdit, onDelete, onSubtaskChange }) {
     try {
       await api.put(`/api/tasks/${task.id}`, { repo_url: repoInput || null });
       task.repo_url = repoInput;
+      if (tokenInput) localStorage.setItem(`aw_token_${task.id}`, tokenInput);
+      else localStorage.removeItem(`aw_token_${task.id}`);
       setAddingRepo(false);
       toast.success(repoInput ? 'Repo linked!' : 'Repo removed');
     } catch { toast.error('Failed to save repo'); }
@@ -157,7 +160,7 @@ function TaskCard({ task, onToggleDone, onEdit, onDelete, onSubtaskChange }) {
                   className="btn-primary text-xs px-2 py-1">Add</motion.button>
               </form>
 
-              {/* Repo link section */}
+              {/* Repo + token section */}
               <div className="pt-1 border-t border-slate-200 mt-1">
                 {!addingRepo ? (
                   <button onClick={() => setAddingRepo(true)}
@@ -166,14 +169,22 @@ function TaskCard({ task, onToggleDone, onEdit, onDelete, onSubtaskChange }) {
                     {task.repo_url ? `Repo: ${repoName}` : 'Link GitHub repo to this task'}
                   </button>
                 ) : (
-                  <div className="flex gap-1.5 items-center">
-                    <GitBranch className="w-3 h-3 text-slate-400 shrink-0" />
-                    <input className="input-field text-xs py-1 flex-1" placeholder="https://github.com/you/repo"
-                      value={repoInput} onChange={e => setRepoInput(e.target.value)} autoFocus />
-                    <button onClick={saveRepo} className="btn-primary text-xs px-2 py-1">Save</button>
-                    <button onClick={() => setAddingRepo(false)} className="p-1 rounded hover:bg-slate-200">
-                      <X className="w-3 h-3 text-slate-400" />
-                    </button>
+                  <div className="space-y-1.5">
+                    <div className="flex gap-1.5 items-center">
+                      <GitBranch className="w-3 h-3 text-slate-400 shrink-0" />
+                      <input className="input-field text-xs py-1 flex-1" placeholder="https://github.com/you/repo"
+                        value={repoInput} onChange={e => setRepoInput(e.target.value)} autoFocus />
+                    </div>
+                    <div className="flex gap-1.5 items-center">
+                      <span className="w-3 h-3 shrink-0 text-slate-300 text-xs leading-none">🔑</span>
+                      <input className="input-field text-xs py-1 flex-1 font-mono" type="password"
+                        placeholder="Token (optional, for private repos)"
+                        value={tokenInput} onChange={e => setTokenInput(e.target.value)} />
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button onClick={saveRepo} className="btn-primary text-xs px-2 py-1">Save</button>
+                      <button onClick={() => setAddingRepo(false)} className="btn-secondary text-xs px-2 py-1">Cancel</button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -210,11 +221,6 @@ export default function DashboardPage() {
   // Edit task state
   const [editingTask, setEditingTask] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', priority: 'medium', due_date: '', repo_url: '' });
-  // GitHub repo connection
-  const [githubRepo, setGithubRepo] = useState(() => localStorage.getItem('aw_github_repo') || '');
-  const [githubToken, setGithubToken] = useState(() => localStorage.getItem('aw_github_token') || '');
-  const [showGithubForm, setShowGithubForm] = useState(false);
-  const [githubContext, setGithubContext] = useState(null);
   const sessionRef = useRef(null);
   const addingTask = useRef(false);
 
@@ -229,19 +235,19 @@ export default function DashboardPage() {
     setPlan(null);
     try {
       const pending = tasks.filter(t => t.status === 'pending');
+      const taskWithRepo = pending.find(t => t.repo_url);
       const { data } = await api.post('/api/ai/plan', {
         zone,
         tasks: pending,
-        githubRepo: githubRepo || undefined,
-        githubToken: githubToken || undefined,
+        githubRepo: taskWithRepo?.repo_url,
+        githubToken: taskWithRepo ? (localStorage.getItem(`aw_token_${taskWithRepo.id}`) || undefined) : undefined,
       });
       setPlan(data);
-      if (data.githubContext) setGithubContext(data.githubContext);
     } catch (err) {
       toast.error(err.response?.data?.error || 'AI plan failed — check GROQ_API_KEY');
     }
     finally { setPlanLoading(false); }
-  }, [tasks, githubRepo, githubToken]);
+  }, [tasks]);
 
   const onZoneChange = useCallback(async (newZone, prevZone) => {
     // End previous session
@@ -495,82 +501,6 @@ export default function DashboardPage() {
             </motion.button>
           </div>
 
-          {/* ── GitHub Repo Connect (inside Tasks) ── */}
-          <div className="card p-3 border border-dashed border-slate-200">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <GitBranch className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span className="text-xs text-slate-600 truncate">
-                  {githubContext
-                    ? <span className="flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
-                        <span className="font-medium text-indigo-600 truncate">{githubContext.repoName}</span>
-                      </span>
-                    : githubRepo
-                      ? <span className="truncate">{githubRepo.replace('https://github.com/', '')}</span>
-                      : 'Connect repo — AI uses your issues & PRs'
-                  }
-                </span>
-              </div>
-              <button onClick={() => setShowGithubForm(v => !v)}
-                className="text-xs text-indigo-600 hover:underline shrink-0">
-                {showGithubForm ? 'Hide' : githubRepo ? 'Edit' : 'Connect'}
-              </button>
-            </div>
-
-            {/* Context pills */}
-            {githubContext && !showGithubForm && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                <span className="text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded-full">🐛 {githubContext.openIssues.length} issues</span>
-                <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">🔀 {githubContext.openPRs.length} PRs</span>
-                <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">📦 {githubContext.recentCommits.length} commits</span>
-              </div>
-            )}
-
-            <AnimatePresence>
-              {showGithubForm && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                  <div className="pt-3 space-y-2">
-                    <div>
-                      <label className="text-xs text-slate-500 block mb-1">Repo URL</label>
-                      <input className="input-field text-xs" placeholder="https://github.com/you/project"
-                        value={githubRepo} onChange={e => setGithubRepo(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-500 block mb-1">
-                        Token <span className="text-slate-400">(optional, for private repos)</span>
-                      </label>
-                      <input className="input-field text-xs font-mono" type="password" placeholder="ghp_..."
-                        value={githubToken} onChange={e => setGithubToken(e.target.value)} />
-                    </div>
-                    <div className="flex gap-2">
-                      <motion.button whileTap={{ scale: 0.97 }}
-                        onClick={() => {
-                          localStorage.setItem('aw_github_repo', githubRepo);
-                          localStorage.setItem('aw_github_token', githubToken);
-                          setShowGithubForm(false);
-                          setGithubContext(null);
-                          toast.success('Repo connected — refresh AI plan to use it', { icon: '🐙' });
-                        }}
-                        className="btn-primary text-xs flex items-center gap-1.5">
-                        <Link className="w-3 h-3" /> Save
-                      </motion.button>
-                      {githubRepo && (
-                        <button onClick={() => {
-                          setGithubRepo(''); setGithubToken(''); setGithubContext(null);
-                          localStorage.removeItem('aw_github_repo');
-                          localStorage.removeItem('aw_github_token');
-                          setShowGithubForm(false);
-                        }} className="btn-secondary text-xs">Disconnect</button>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
           <AnimatePresence>
             {showAddTask && (
               <motion.form initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
@@ -587,12 +517,6 @@ export default function DashboardPage() {
                   </select>
                   <input type="date" className="input-field text-xs" value={newTask.due_date}
                     onChange={e => setNewTask(n => ({ ...n, due_date: e.target.value }))} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <GitBranch className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <input className="input-field text-xs" placeholder="GitHub repo URL (optional)"
-                    value={newTask.repo_url}
-                    onChange={e => setNewTask(n => ({ ...n, repo_url: e.target.value }))} />
                 </div>
                 <motion.button whileTap={{ scale: 0.97 }} type="submit" className="btn-primary w-full text-xs">
                   Add Task
@@ -678,15 +602,6 @@ export default function DashboardPage() {
                     <label className="text-xs font-medium text-slate-600 block mb-1">Due Date</label>
                     <input type="date" className="input-field text-sm" value={editForm.due_date}
                       onChange={e => setEditForm(f => ({ ...f, due_date: e.target.value }))} />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1">GitHub Repo (optional)</label>
-                  <div className="flex items-center gap-2">
-                    <GitBranch className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <input className="input-field text-sm" placeholder="https://github.com/you/repo"
-                      value={editForm.repo_url}
-                      onChange={e => setEditForm(f => ({ ...f, repo_url: e.target.value }))} />
                   </div>
                 </div>
                 <div className="flex gap-2 pt-1">
