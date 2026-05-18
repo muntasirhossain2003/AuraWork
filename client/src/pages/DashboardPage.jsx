@@ -14,9 +14,6 @@ function TaskCard({ task, onToggleDone, onEdit, onDelete, onSubtaskChange }) {
   const [expanded, setExpanded] = useState(false);
   const [subtasks, setSubtasks] = useState(task.subtasks || []);
   const [newSub, setNewSub] = useState('');
-  const [addingRepo, setAddingRepo] = useState(false);
-  const [repoInput, setRepoInput] = useState(task.repo_url || '');
-  const [tokenInput, setTokenInput] = useState(() => localStorage.getItem(`aw_token_${task.id}`) || '');
 
   const doneCount = subtasks.filter(s => s.status === 'done').length;
   const progress = subtasks.length ? Math.round((doneCount / subtasks.length) * 100) : 0;
@@ -52,17 +49,6 @@ function TaskCard({ task, onToggleDone, onEdit, onDelete, onSubtaskChange }) {
     } catch { toast.error('Failed to delete subtask'); }
   };
 
-  const saveRepo = async () => {
-    try {
-      await api.put(`/api/tasks/${task.id}`, { repo_url: repoInput || null });
-      task.repo_url = repoInput;
-      if (tokenInput) localStorage.setItem(`aw_token_${task.id}`, tokenInput);
-      else localStorage.removeItem(`aw_token_${task.id}`);
-      setAddingRepo(false);
-      toast.success(repoInput ? 'Repo linked!' : 'Repo removed');
-    } catch { toast.error('Failed to save repo'); }
-  };
-
   const repoName = (task.repo_url || '').replace('https://github.com/', '').replace(/\.git$/, '');
 
   return (
@@ -83,7 +69,7 @@ function TaskCard({ task, onToggleDone, onEdit, onDelete, onSubtaskChange }) {
           </p>
 
           {/* Repo badge */}
-          {task.repo_url && !addingRepo && (
+          {task.repo_url && (
             <div className="flex items-center gap-1 mt-0.5">
               <GitBranch className="w-3 h-3 text-slate-400" />
               <a href={task.repo_url} target="_blank" rel="noopener noreferrer"
@@ -160,34 +146,6 @@ function TaskCard({ task, onToggleDone, onEdit, onDelete, onSubtaskChange }) {
                   className="btn-primary text-xs px-2 py-1">Add</motion.button>
               </form>
 
-              {/* Repo + token section */}
-              <div className="pt-1 border-t border-slate-200 mt-1">
-                {!addingRepo ? (
-                  <button onClick={() => setAddingRepo(true)}
-                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-indigo-500 transition-colors py-0.5">
-                    <GitBranch className="w-3 h-3" />
-                    {task.repo_url ? `Repo: ${repoName}` : 'Link GitHub repo to this task'}
-                  </button>
-                ) : (
-                  <div className="space-y-1.5">
-                    <div className="flex gap-1.5 items-center">
-                      <GitBranch className="w-3 h-3 text-slate-400 shrink-0" />
-                      <input className="input-field text-xs py-1 flex-1" placeholder="https://github.com/you/repo"
-                        value={repoInput} onChange={e => setRepoInput(e.target.value)} autoFocus />
-                    </div>
-                    <div className="flex gap-1.5 items-center">
-                      <span className="w-3 h-3 shrink-0 text-slate-300 text-xs leading-none">🔑</span>
-                      <input className="input-field text-xs py-1 flex-1 font-mono" type="password"
-                        placeholder="Token (optional, for private repos)"
-                        value={tokenInput} onChange={e => setTokenInput(e.target.value)} />
-                    </div>
-                    <div className="flex gap-1.5">
-                      <button onClick={saveRepo} className="btn-primary text-xs px-2 py-1">Save</button>
-                      <button onClick={() => setAddingRepo(false)} className="btn-secondary text-xs px-2 py-1">Cancel</button>
-                    </div>
-                  </div>
-                )}
-              </div>
 
             </div>
           </motion.div>
@@ -221,6 +179,7 @@ export default function DashboardPage() {
   // Edit task state
   const [editingTask, setEditingTask] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', priority: 'medium', due_date: '', repo_url: '' });
+  const [editToken, setEditToken] = useState('');
   const sessionRef = useRef(null);
   const addingTask = useRef(false);
 
@@ -324,12 +283,15 @@ export default function DashboardPage() {
   const openEditTask = (task) => {
     setEditingTask(task);
     setEditForm({ title: task.title, priority: task.priority, due_date: task.due_date || '', repo_url: task.repo_url || '' });
+    setEditToken(localStorage.getItem(`aw_token_${task.id}`) || '');
   };
 
   const saveEditTask = async (e) => {
     e.preventDefault();
     try {
       const { data } = await api.put(`/api/tasks/${editingTask.id}`, editForm);
+      if (editToken) localStorage.setItem(`aw_token_${editingTask.id}`, editToken);
+      else localStorage.removeItem(`aw_token_${editingTask.id}`);
       setTasks(t => t.map(tk => tk.id === editingTask.id ? { ...tk, ...data } : tk));
       setEditingTask(null);
       toast.success('Task updated!');
@@ -461,7 +423,7 @@ export default function DashboardPage() {
                 <motion.div key={i} initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.08 }} className="card p-4">
                   <div className="flex items-start gap-4">
-                    <div className="text-right min-w-[64px]">
+                    <div className="text-right min-w-16">
                       <p className="text-xs font-semibold text-indigo-600">{item.time}</p>
                       <p className="text-xs text-slate-400">{item.duration}</p>
                     </div>
@@ -603,6 +565,20 @@ export default function DashboardPage() {
                     <input type="date" className="input-field text-sm" value={editForm.due_date}
                       onChange={e => setEditForm(f => ({ ...f, due_date: e.target.value }))} />
                   </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">GitHub Repo <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <div className="flex items-center gap-2">
+                    <GitBranch className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <input className="input-field text-sm" placeholder="https://github.com/you/repo"
+                      value={editForm.repo_url}
+                      onChange={e => setEditForm(f => ({ ...f, repo_url: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">Access Token <span className="text-slate-400 font-normal">(optional, for private repos)</span></label>
+                  <input className="input-field text-sm font-mono" type="password" placeholder="ghp_..."
+                    value={editToken} onChange={e => setEditToken(e.target.value)} />
                 </div>
                 <div className="flex gap-2 pt-1">
                   <motion.button whileTap={{ scale: 0.97 }} type="submit" className="btn-primary flex-1 text-sm">
