@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment variables - NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Claude AI files - hide from repo
+CLAUDE.md
+*.claude.md
+*_ClaudeCode_Prompts.md
+*_SRS.md
+.claude/
+.qodo/
+
+# IDE & OS
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Misc
+.eslintcache
+*.tgz
