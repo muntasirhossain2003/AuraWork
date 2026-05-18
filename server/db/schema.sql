@@ -44,9 +44,20 @@ CREATE TABLE IF NOT EXISTS tasks (
   priority    TEXT CHECK(priority IN ('high','medium','low')) DEFAULT 'medium',
   status      TEXT CHECK(status IN ('pending','done','deferred')) DEFAULT 'pending',
   due_date    DATE,
+  repo_url    TEXT,
   created_at  TIMESTAMP DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
+
+-- Subtasks (belong to a task)
+CREATE TABLE IF NOT EXISTS subtasks (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id     UUID REFERENCES tasks(id) ON DELETE CASCADE,
+  title       TEXT NOT NULL,
+  status      TEXT DEFAULT 'pending' CHECK (status IN ('pending','done')),
+  created_at  TIMESTAMP DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_subtasks_task_id ON subtasks(task_id);
 
 -- Work Sessions (each zone visit)
 CREATE TABLE IF NOT EXISTS sessions (

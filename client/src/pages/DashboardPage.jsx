@@ -1,13 +1,190 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { RefreshCw, Plus, CheckCircle, Clock, ChevronDown, ChevronUp, Lightbulb, Navigation, Crosshair, Pencil, Trash2, X, GitBranch, Link, CheckCircle2 } from 'lucide-react';
+import { RefreshCw, Plus, CheckCircle, Clock, ChevronDown, ChevronUp, Lightbulb, Navigation, Crosshair, Pencil, Trash2, X, GitBranch, Link, CheckCircle2, ExternalLink } from 'lucide-react';
 import api from '../utils/api';
 import useGeofence from '../hooks/useGeofence';
 
 const ZONE_ICONS = { home: '🏠', office: '🏢', cafe: '☕', client: '🤝', other: '📍' };
 const ZONE_BORDER = { home: 'border-green-400 bg-green-50', office: 'border-blue-400 bg-blue-50', cafe: 'border-amber-400 bg-amber-50', client: 'border-purple-400 bg-purple-50', other: 'border-slate-300 bg-slate-50' };
 const PRIORITY_BADGE = { high: 'bg-red-100 text-red-700', medium: 'bg-amber-100 text-amber-700', low: 'bg-slate-100 text-slate-600' };
+
+// ── TaskCard: single task with subtasks + repo link ──
+function TaskCard({ task, onToggleDone, onEdit, onDelete, onSubtaskChange }) {
+  const [expanded, setExpanded] = useState(false);
+  const [subtasks, setSubtasks] = useState(task.subtasks || []);
+  const [newSub, setNewSub] = useState('');
+  const [addingRepo, setAddingRepo] = useState(false);
+  const [repoInput, setRepoInput] = useState(task.repo_url || '');
+
+  const doneCount = subtasks.filter(s => s.status === 'done').length;
+  const progress = subtasks.length ? Math.round((doneCount / subtasks.length) * 100) : 0;
+
+  const addSubtask = async (e) => {
+    e.preventDefault();
+    if (!newSub.trim()) return;
+    try {
+      const { data } = await api.post(`/api/tasks/${task.id}/subtasks`, { title: newSub.trim() });
+      const updated = [...subtasks, data];
+      setSubtasks(updated);
+      setNewSub('');
+      onSubtaskChange?.(task.id, updated);
+    } catch { toast.error('Failed to add subtask'); }
+  };
+
+  const toggleSubtask = async (sub) => {
+    const newStatus = sub.status === 'done' ? 'pending' : 'done';
+    try {
+      await api.put(`/api/tasks/subtasks/${sub.id}`, { status: newStatus });
+      const updated = subtasks.map(s => s.id === sub.id ? { ...s, status: newStatus } : s);
+      setSubtasks(updated);
+      onSubtaskChange?.(task.id, updated);
+    } catch { toast.error('Failed to update subtask'); }
+  };
+
+  const deleteSubtask = async (subId) => {
+    try {
+      await api.delete(`/api/tasks/subtasks/${subId}`);
+      const updated = subtasks.filter(s => s.id !== subId);
+      setSubtasks(updated);
+      onSubtaskChange?.(task.id, updated);
+    } catch { toast.error('Failed to delete subtask'); }
+  };
+
+  const saveRepo = async () => {
+    try {
+      await api.put(`/api/tasks/${task.id}`, { repo_url: repoInput || null });
+      task.repo_url = repoInput;
+      setAddingRepo(false);
+      toast.success(repoInput ? 'Repo linked!' : 'Repo removed');
+    } catch { toast.error('Failed to save repo'); }
+  };
+
+  const repoName = (task.repo_url || '').replace('https://github.com/', '').replace(/\.git$/, '');
+
+  return (
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, x: 30 }} className="card overflow-hidden">
+
+      {/* ── Task header ── */}
+      <div className="p-3 flex items-start gap-2 group">
+        <button onClick={() => onToggleDone(task)} className="shrink-0 mt-0.5">
+          <div className={`w-4 h-4 rounded-full border-2 transition-colors ${
+            task.status === 'done' ? 'bg-green-500 border-green-500' : 'border-slate-300 hover:border-indigo-500'
+          }`} />
+        </button>
+
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-medium truncate ${task.status === 'done' ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+            {task.title}
+          </p>
+
+          {/* Repo badge */}
+          {task.repo_url && !addingRepo && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <GitBranch className="w-3 h-3 text-slate-400" />
+              <a href={task.repo_url} target="_blank" rel="noopener noreferrer"
+                className="text-xs text-indigo-500 hover:underline truncate max-w-35">
+                {repoName}
+              </a>
+              <ExternalLink className="w-2.5 h-2.5 text-slate-300" />
+            </div>
+          )}
+
+          {/* Subtask progress bar */}
+          {subtasks.length > 0 && (
+            <div className="mt-1.5 flex items-center gap-2">
+              <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                <motion.div className="h-full bg-indigo-500 rounded-full"
+                  initial={{ width: 0 }} animate={{ width: `${progress}%` }}
+                  transition={{ duration: 0.4 }} />
+              </div>
+              <span className="text-xs text-slate-400 shrink-0">{doneCount}/{subtasks.length}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Right side: priority + actions */}
+        <div className="flex items-center gap-1 shrink-0">
+          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${PRIORITY_BADGE[task.priority]}`}>
+            {task.priority}
+          </span>
+          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => setExpanded(v => !v)} className="p-1 rounded hover:bg-slate-100 transition-colors">
+              {expanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+            </button>
+            <button onClick={() => onEdit(task)} className="p-1 rounded hover:bg-indigo-50 transition-colors">
+              <Pencil className="w-3.5 h-3.5 text-indigo-400" />
+            </button>
+            <button onClick={() => onDelete(task.id)} className="p-1 rounded hover:bg-red-50 transition-colors">
+              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Expanded: subtasks + repo link ── */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+            className="overflow-hidden border-t border-slate-100">
+            <div className="px-3 py-2 space-y-1 bg-slate-50">
+
+              {/* Subtask list */}
+              {subtasks.map(sub => (
+                <div key={sub.id} className="flex items-center gap-2 group/sub py-0.5">
+                  <button onClick={() => toggleSubtask(sub)} className="shrink-0">
+                    {sub.status === 'done'
+                      ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                      : <div className="w-3.5 h-3.5 rounded border border-slate-300 hover:border-indigo-400 transition-colors" />
+                    }
+                  </button>
+                  <span className={`text-xs flex-1 ${sub.status === 'done' ? 'line-through text-slate-400' : 'text-slate-600'}`}>
+                    {sub.title}
+                  </span>
+                  <button onClick={() => deleteSubtask(sub.id)}
+                    className="opacity-0 group-hover/sub:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-50">
+                    <X className="w-3 h-3 text-red-400" />
+                  </button>
+                </div>
+              ))}
+
+              {/* Add subtask input */}
+              <form onSubmit={addSubtask} className="flex items-center gap-2 pt-1">
+                <input className="input-field text-xs py-1 flex-1" placeholder="+ Add subtask..."
+                  value={newSub} onChange={e => setNewSub(e.target.value)} />
+                <motion.button whileTap={{ scale: 0.95 }} type="submit"
+                  className="btn-primary text-xs px-2 py-1">Add</motion.button>
+              </form>
+
+              {/* Repo link section */}
+              <div className="pt-1 border-t border-slate-200 mt-1">
+                {!addingRepo ? (
+                  <button onClick={() => setAddingRepo(true)}
+                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-indigo-500 transition-colors py-0.5">
+                    <GitBranch className="w-3 h-3" />
+                    {task.repo_url ? `Repo: ${repoName}` : 'Link GitHub repo to this task'}
+                  </button>
+                ) : (
+                  <div className="flex gap-1.5 items-center">
+                    <GitBranch className="w-3 h-3 text-slate-400 shrink-0" />
+                    <input className="input-field text-xs py-1 flex-1" placeholder="https://github.com/you/repo"
+                      value={repoInput} onChange={e => setRepoInput(e.target.value)} autoFocus />
+                    <button onClick={saveRepo} className="btn-primary text-xs px-2 py-1">Save</button>
+                    <button onClick={() => setAddingRepo(false)} className="p-1 rounded hover:bg-slate-200">
+                      <X className="w-3 h-3 text-slate-400" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
 
 function SkeletonCard() {
   return (
@@ -24,7 +201,7 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState([]);
   const [plan, setPlan] = useState(null);
   const [planLoading, setPlanLoading] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', priority: 'medium', due_date: '' });
+  const [newTask, setNewTask] = useState({ title: '', priority: 'medium', due_date: '', repo_url: '' });
   const [showAddTask, setShowAddTask] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [showSessions, setShowSessions] = useState(false);
@@ -32,7 +209,7 @@ export default function DashboardPage() {
   const [showCoords, setShowCoords] = useState(false);
   // Edit task state
   const [editingTask, setEditingTask] = useState(null);
-  const [editForm, setEditForm] = useState({ title: '', priority: 'medium', due_date: '' });
+  const [editForm, setEditForm] = useState({ title: '', priority: 'medium', due_date: '', repo_url: '' });
   // GitHub repo connection
   const [githubRepo, setGithubRepo] = useState(() => localStorage.getItem('aw_github_repo') || '');
   const [githubToken, setGithubToken] = useState(() => localStorage.getItem('aw_github_token') || '');
@@ -140,7 +317,7 @@ export default function DashboardPage() {
 
   const openEditTask = (task) => {
     setEditingTask(task);
-    setEditForm({ title: task.title, priority: task.priority, due_date: task.due_date || '' });
+    setEditForm({ title: task.title, priority: task.priority, due_date: task.due_date || '', repo_url: task.repo_url || '' });
   };
 
   const saveEditTask = async (e) => {
@@ -411,6 +588,12 @@ export default function DashboardPage() {
                   <input type="date" className="input-field text-xs" value={newTask.due_date}
                     onChange={e => setNewTask(n => ({ ...n, due_date: e.target.value }))} />
                 </div>
+                <div className="flex items-center gap-2">
+                  <GitBranch className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <input className="input-field text-xs" placeholder="GitHub repo URL (optional)"
+                    value={newTask.repo_url}
+                    onChange={e => setNewTask(n => ({ ...n, repo_url: e.target.value }))} />
+                </div>
                 <motion.button whileTap={{ scale: 0.97 }} type="submit" className="btn-primary w-full text-xs">
                   Add Task
                 </motion.button>
@@ -423,32 +606,17 @@ export default function DashboardPage() {
               <p className="text-center text-slate-400 text-sm py-6">No pending tasks — add your first!</p>
             )}
             <AnimatePresence>
-              {pendingTasks.map((task, i) => (
-                <motion.div key={task.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, x: 30 }} transition={{ delay: i * 0.04 }}
-                  className="card p-3 flex items-center gap-2 group">
-                  <button onClick={() => toggleTaskDone(task)} className="shrink-0">
-                    <div className="w-4 h-4 rounded-full border-2 border-slate-300 hover:border-indigo-500 transition-colors" />
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-slate-800 truncate">{task.title}</p>
-                    {task.due_date && <p className="text-xs text-slate-400">{new Date(task.due_date).toLocaleDateString()}</p>}
-                  </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${PRIORITY_BADGE[task.priority]}`}>
-                    {task.priority}
-                  </span>
-                  {/* Edit / Delete — visible on hover */}
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <button onClick={() => openEditTask(task)}
-                      className="p-1 rounded hover:bg-indigo-50 transition-colors">
-                      <Pencil className="w-3.5 h-3.5 text-indigo-400" />
-                    </button>
-                    <button onClick={() => deleteTask(task.id)}
-                      className="p-1 rounded hover:bg-red-50 transition-colors">
-                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                    </button>
-                  </div>
-                </motion.div>
+              {pendingTasks.map(task => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  onToggleDone={toggleTaskDone}
+                  onEdit={openEditTask}
+                  onDelete={deleteTask}
+                  onSubtaskChange={(taskId, updated) =>
+                    setTasks(ts => ts.map(t => t.id === taskId ? { ...t, subtasks: updated } : t))
+                  }
+                />
               ))}
             </AnimatePresence>
           </div>
@@ -510,6 +678,15 @@ export default function DashboardPage() {
                     <label className="text-xs font-medium text-slate-600 block mb-1">Due Date</label>
                     <input type="date" className="input-field text-sm" value={editForm.due_date}
                       onChange={e => setEditForm(f => ({ ...f, due_date: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">GitHub Repo (optional)</label>
+                  <div className="flex items-center gap-2">
+                    <GitBranch className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <input className="input-field text-sm" placeholder="https://github.com/you/repo"
+                      value={editForm.repo_url}
+                      onChange={e => setEditForm(f => ({ ...f, repo_url: e.target.value }))} />
                   </div>
                 </div>
                 <div className="flex gap-2 pt-1">
