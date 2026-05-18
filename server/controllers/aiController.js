@@ -19,7 +19,7 @@ Return ONLY valid JSON in this exact format:
 }`;
 
     const response = await groq.chat.completions.create({
-      model: 'llama3-8b-8192',
+      model: 'llama-3.1-8b-instant',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
     });
@@ -36,7 +36,7 @@ exports.generateHandoff = async (req, res) => {
     const { zone, completedTasks, incompleteTasks, sessionDuration } = req.body;
     const prompt = `Generate a handoff note for a work session. Zone: ${zone?.name} (${zone?.zone_type}). Duration: ${sessionDuration || 'unknown'}. Completed: ${(completedTasks || []).map(t => t.title).join(', ') || 'none'}. Incomplete: ${(incompleteTasks || []).map(t => t.title).join(', ') || 'none'}. Write 3-4 sentences: what was done, what to carry over, and a recommendation. Return ONLY the note text.`;
     const response = await groq.chat.completions.create({
-      model: 'llama3-8b-8192',
+      model: 'llama-3.1-8b-instant',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
     });
@@ -54,7 +54,7 @@ exports.getInsights = async (req, res) => {
     const summary = sessions.map(s => `Zone: ${s.zones?.zone_type}, Tasks: ${s.tasks_completed}/${s.tasks_total}, Day: ${new Date(s.entered_at).toLocaleDateString('en-US', { weekday: 'short' })}`).join('\n');
     const prompt = `Analyze these work sessions:\n${summary}\n\nReturn 3-5 productivity insights as JSON array: [{"insight": "observation text", "metric": "supporting stat"}]. Return ONLY valid JSON array.`;
     const response = await groq.chat.completions.create({
-      model: 'llama3-8b-8192',
+      model: 'llama-3.1-8b-instant',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.5,
     });

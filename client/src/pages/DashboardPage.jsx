@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { RefreshCw, Plus, CheckCircle, Clock, ChevronDown, ChevronUp, Lightbulb, Navigation, Crosshair } from 'lucide-react';
+import { RefreshCw, Plus, CheckCircle, Clock, ChevronDown, ChevronUp, Lightbulb, Navigation, Crosshair, Pencil, Trash2, X } from 'lucide-react';
 import api from '../utils/api';
 import useGeofence from '../hooks/useGeofence';
 
@@ -28,9 +28,11 @@ export default function DashboardPage() {
   const [showAddTask, setShowAddTask] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [showSessions, setShowSessions] = useState(false);
-  // Manual zone override — when GPS doesn't detect, user can pick manually
   const [manualZone, setManualZone] = useState(null);
   const [showCoords, setShowCoords] = useState(false);
+  // Edit task state
+  const [editingTask, setEditingTask] = useState(null); // holds task being edited
+  const [editForm, setEditForm] = useState({ title: '', priority: 'medium', due_date: '' });
   const sessionRef = useRef(null);
   const addingTask = useRef(false);
 
@@ -123,6 +125,29 @@ export default function DashboardPage() {
       await api.put(`/api/tasks/${task.id}`, { status: newStatus });
       setTasks(t => t.map(tk => tk.id === task.id ? { ...tk, status: newStatus } : tk));
     } catch { toast.error('Failed to update task'); }
+  };
+
+  const openEditTask = (task) => {
+    setEditingTask(task);
+    setEditForm({ title: task.title, priority: task.priority, due_date: task.due_date || '' });
+  };
+
+  const saveEditTask = async (e) => {
+    e.preventDefault();
+    try {
+      const { data } = await api.put(`/api/tasks/${editingTask.id}`, editForm);
+      setTasks(t => t.map(tk => tk.id === editingTask.id ? { ...tk, ...data } : tk));
+      setEditingTask(null);
+      toast.success('Task updated!');
+    } catch { toast.error('Failed to update task'); }
+  };
+
+  const deleteTask = async (taskId) => {
+    try {
+      await api.delete(`/api/tasks/${taskId}`);
+      setTasks(t => t.filter(tk => tk.id !== taskId));
+      toast.success('Task deleted');
+    } catch { toast.error('Failed to delete task'); }
   };
 
   const pendingTasks = tasks.filter(t => t.status === 'pending');
@@ -314,7 +339,7 @@ export default function DashboardPage() {
               {pendingTasks.map((task, i) => (
                 <motion.div key={task.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: 30 }} transition={{ delay: i * 0.04 }}
-                  className="card p-3 flex items-center gap-3">
+                  className="card p-3 flex items-center gap-2 group">
                   <button onClick={() => toggleTaskDone(task)} className="shrink-0">
                     <div className="w-4 h-4 rounded-full border-2 border-slate-300 hover:border-indigo-500 transition-colors" />
                   </button>
@@ -322,9 +347,20 @@ export default function DashboardPage() {
                     <p className="text-sm text-slate-800 truncate">{task.title}</p>
                     {task.due_date && <p className="text-xs text-slate-400">{new Date(task.due_date).toLocaleDateString()}</p>}
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_BADGE[task.priority]}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${PRIORITY_BADGE[task.priority]}`}>
                     {task.priority}
                   </span>
+                  {/* Edit / Delete — visible on hover */}
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <button onClick={() => openEditTask(task)}
+                      className="p-1 rounded hover:bg-indigo-50 transition-colors">
+                      <Pencil className="w-3.5 h-3.5 text-indigo-400" />
+                    </button>
+                    <button onClick={() => deleteTask(task.id)}
+                      className="p-1 rounded hover:bg-red-50 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    </button>
+                  </div>
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -349,6 +385,59 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Edit task modal */}
+      <AnimatePresence>
+        {editingTask && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+            onClick={e => e.target === e.currentTarget && setEditingTask(null)}
+          >
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }} transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-slate-900">Edit Task</h3>
+                <button onClick={() => setEditingTask(null)} className="p-1.5 rounded-lg hover:bg-slate-100">
+                  <X className="w-4 h-4 text-slate-500" />
+                </button>
+              </div>
+              <form onSubmit={saveEditTask} className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">Title</label>
+                  <input className="input-field" value={editForm.title}
+                    onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} required />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 block mb-1">Priority</label>
+                    <select className="input-field text-sm" value={editForm.priority}
+                      onChange={e => setEditForm(f => ({ ...f, priority: e.target.value }))}>
+                      <option value="high">🔴 High</option>
+                      <option value="medium">🟡 Medium</option>
+                      <option value="low">🟢 Low</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 block mb-1">Due Date</label>
+                    <input type="date" className="input-field text-sm" value={editForm.due_date}
+                      onChange={e => setEditForm(f => ({ ...f, due_date: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <motion.button whileTap={{ scale: 0.97 }} type="submit" className="btn-primary flex-1 text-sm">
+                    Save Changes
+                  </motion.button>
+                  <button type="button" onClick={() => setEditingTask(null)} className="btn-secondary text-sm px-4">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Previous sessions */}
       {sessions.length > 0 && (
