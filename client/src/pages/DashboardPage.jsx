@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { RefreshCw, Plus, CheckCircle, Clock, ChevronDown, ChevronUp, Lightbulb, Navigation, Crosshair, Pencil, Trash2, X } from 'lucide-react';
+import { RefreshCw, Plus, CheckCircle, Clock, ChevronDown, ChevronUp, Lightbulb, Navigation, Crosshair, Pencil, Trash2, X, GitBranch, Link, CheckCircle2 } from 'lucide-react';
 import api from '../utils/api';
 import useGeofence from '../hooks/useGeofence';
 
@@ -31,8 +31,13 @@ export default function DashboardPage() {
   const [manualZone, setManualZone] = useState(null);
   const [showCoords, setShowCoords] = useState(false);
   // Edit task state
-  const [editingTask, setEditingTask] = useState(null); // holds task being edited
+  const [editingTask, setEditingTask] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', priority: 'medium', due_date: '' });
+  // GitHub repo connection
+  const [githubRepo, setGithubRepo] = useState(() => localStorage.getItem('aw_github_repo') || '');
+  const [githubToken, setGithubToken] = useState(() => localStorage.getItem('aw_github_token') || '');
+  const [showGithubForm, setShowGithubForm] = useState(false);
+  const [githubContext, setGithubContext] = useState(null);
   const sessionRef = useRef(null);
   const addingTask = useRef(false);
 
@@ -47,13 +52,19 @@ export default function DashboardPage() {
     setPlan(null);
     try {
       const pending = tasks.filter(t => t.status === 'pending');
-      const { data } = await api.post('/api/ai/plan', { zone, tasks: pending });
+      const { data } = await api.post('/api/ai/plan', {
+        zone,
+        tasks: pending,
+        githubRepo: githubRepo || undefined,
+        githubToken: githubToken || undefined,
+      });
       setPlan(data);
+      if (data.githubContext) setGithubContext(data.githubContext);
     } catch (err) {
       toast.error(err.response?.data?.error || 'AI plan failed — check GROQ_API_KEY');
     }
     finally { setPlanLoading(false); }
-  }, [tasks]);
+  }, [tasks, githubRepo, githubToken]);
 
   const onZoneChange = useCallback(async (newZone, prevZone) => {
     // End previous session
@@ -237,6 +248,87 @@ export default function DashboardPage() {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* ── GitHub Repo Connect ── */}
+      <div className="card p-3 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GitBranch className="w-4 h-4 text-slate-600 shrink-0" />
+            <span className="text-xs font-medium text-slate-700">
+              {githubContext
+                ? <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> Connected: <span className="text-indigo-600">{githubContext.repoName}</span></span>
+                : githubRepo ? `Repo: ${githubRepo}` : 'Connect GitHub repo for smarter AI suggestions'}
+            </span>
+          </div>
+          <button onClick={() => setShowGithubForm(v => !v)}
+            className="text-xs text-indigo-600 hover:underline shrink-0">
+            {showGithubForm ? 'Hide' : githubRepo ? 'Change' : 'Connect'}
+          </button>
+        </div>
+
+        <AnimatePresence>
+          {showGithubForm && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+              <div className="pt-3 space-y-2">
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-500 block mb-1">Repo URL (public or private)</label>
+                    <input className="input-field text-xs" placeholder="https://github.com/you/your-project"
+                      value={githubRepo} onChange={e => setGithubRepo(e.target.value)} />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">
+                    Personal Access Token <span className="text-slate-400">(optional — needed for private repos)</span>
+                  </label>
+                  <input className="input-field text-xs font-mono" type="password" placeholder="ghp_..."
+                    value={githubToken} onChange={e => setGithubToken(e.target.value)} />
+                </div>
+                <div className="flex gap-2">
+                  <motion.button whileTap={{ scale: 0.97 }}
+                    onClick={() => {
+                      localStorage.setItem('aw_github_repo', githubRepo);
+                      localStorage.setItem('aw_github_token', githubToken);
+                      setShowGithubForm(false);
+                      setGithubContext(null);
+                      toast.success('GitHub repo saved — generate a plan to load context', { icon: '🐙' });
+                    }}
+                    className="btn-primary text-xs flex items-center gap-1.5">
+                    <Link className="w-3.5 h-3.5" /> Save & Connect
+                  </motion.button>
+                  {githubRepo && (
+                    <button onClick={() => {
+                      setGithubRepo(''); setGithubToken(''); setGithubContext(null);
+                      localStorage.removeItem('aw_github_repo'); localStorage.removeItem('aw_github_token');
+                      setShowGithubForm(false);
+                    }} className="btn-secondary text-xs">Disconnect</button>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400">
+                  AI will read your open issues, recent commits, and open PRs to give project-aware suggestions.
+                  Your token is only stored locally (localStorage) and sent only to your own backend.
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* GitHub context summary pills */}
+        {githubContext && !showGithubForm && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-wrap gap-2 mt-2">
+            <span className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded-full">
+              🐛 {githubContext.openIssues.length} open issues
+            </span>
+            <span className="text-xs px-2 py-1 bg-purple-50 text-purple-600 rounded-full">
+              🔀 {githubContext.openPRs.length} open PRs
+            </span>
+            <span className="text-xs px-2 py-1 bg-slate-100 text-slate-600 rounded-full">
+              📦 {githubContext.recentCommits.length} recent commits
+            </span>
+          </motion.div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">

@@ -1,21 +1,80 @@
 const groq = require('../utils/groq');
 const supabase = require('../utils/supabase');
 
+// Fetch open issues, recent commits, open PRs from a GitHub repo
+async function fetchGitHubContext(repoUrl, token) {
+  try {
+    // Parse owner/repo from URL like https://github.com/owner/repo
+    const match = repoUrl.match(/github\.com\/([^/]+)\/([^/\s]+)/);
+    if (!match) return null;
+    const [, owner, repo] = match;
+    const repoName = repo.replace(/\.git$/, '');
+
+    const headers = { Accept: 'application/vnd.github.v3+json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const base = `https://api.github.com/repos/${owner}/${repoName}`;
+
+    const [issuesRes, commitsRes, prsRes] = await Promise.all([
+      fetch(`${base}/issues?state=open&per_page=10`, { headers }),
+      fetch(`${base}/commits?per_page=7`, { headers }),
+      fetch(`${base}/pulls?state=open&per_page=5`, { headers }),
+    ]);
+
+    const [issues, commits, prs] = await Promise.all([
+      issuesRes.ok ? issuesRes.json() : [],
+      commitsRes.ok ? commitsRes.json() : [],
+      prsRes.ok ? prsRes.json() : [],
+    ]);
+
+    return {
+      repoName: `${owner}/${repoName}`,
+      openIssues: issues.filter(i => !i.pull_request).map(i => `#${i.number}: ${i.title} [${(i.labels || []).map(l => l.name).join(', ') || 'no label'}]`),
+      recentCommits: commits.map(c => `${c.sha?.slice(0, 7)}: ${c.commit?.message?.split('\n')[0]}`),
+      openPRs: prs.map(p => `PR #${p.number}: ${p.title} (${p.user?.login})`),
+    };
+  } catch {
+    return null;
+  }
+}
+
 exports.generatePlan = async (req, res) => {
   try {
-    const { zone, tasks } = req.body;
+    const { zone, tasks, githubRepo, githubToken } = req.body;
     const taskList = (tasks || []).map(t => `- [${t.priority}] ${t.title}`).join('\n') || 'No tasks yet';
-    const prompt = `You are a productivity coach. The user is now at their ${zone.zone_type} zone called "${zone.name}".
-Zone profile: Focus hours: ${zone.focus_hours || 'not set'}, Availability: ${zone.availability || 'not set'}, Preferred task types: ${(zone.task_types || []).join(', ') || 'not set'}.
-Pending tasks:
-${taskList}
 
-Generate a prioritized, time-blocked work plan for this context.
-Return ONLY valid JSON in this exact format:
+    // Fetch GitHub context if repo URL provided
+    let ghContext = null;
+    if (githubRepo) {
+      ghContext = await fetchGitHubContext(githubRepo, githubToken);
+    }
+
+    const githubSection = ghContext ? `
+GitHub Project: ${ghContext.repoName}
+Open Issues (${ghContext.openIssues.length}):
+${ghContext.openIssues.join('\n') || 'none'}
+Open PRs (${ghContext.openPRs.length}):
+${ghContext.openPRs.join('\n') || 'none'}
+Recent Commits:
+${ghContext.recentCommits.join('\n') || 'none'}
+` : '';
+
+    const prompt = `You are a productivity coach with full context of the developer's work.
+
+Location: ${zone.zone_type} zone called "${zone.name}"
+Zone profile: Focus hours: ${zone.focus_hours || 'not set'}, Availability: ${zone.availability || 'not set'}, Preferred task types: ${(zone.task_types || []).join(', ') || 'not set'}
+
+Personal task list:
+${taskList}
+${githubSection ? `\nReal project progress from GitHub:\n${githubSection}` : ''}
+Based on ALL of the above context (location, personal tasks${ghContext ? ', AND the real GitHub project state' : ''}), generate a smart prioritized time-blocked work plan.
+If GitHub data is present, reference specific issue/PR numbers in the plan items.
+
+Return ONLY valid JSON:
 {
-  "summary": "1-2 sentence context summary",
-  "plan": [{ "time": "9:00 AM", "task": "task name", "duration": "45 min", "reason": "why this task now" }],
-  "tip": "one actionable tip for this location"
+  "summary": "1-2 sentence summary referencing actual project state",
+  "plan": [{ "time": "9:00 AM", "task": "task description", "duration": "45 min", "reason": "why this now, referencing specific issues/PRs if available" }],
+  "tip": "one actionable tip specific to this location and project"
 }`;
 
     const response = await groq.chat.completions.create({
@@ -27,7 +86,8 @@ Return ONLY valid JSON in this exact format:
     const text = response.choices[0].message.content;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     const plan = JSON.parse(jsonMatch[0]);
-    res.json(plan);
+    // Include the github context metadata in response so frontend can show it
+    res.json({ ...plan, githubContext: ghContext });
   } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
